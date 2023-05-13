@@ -3,16 +3,16 @@ kind: ReplicaSet
 metadata:
   name: payment-service
   labels:
-    app: paymentService
+    app: paymentservice
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: paymentService
+      app: paymentservice
   template:
     metadata:
       labels:
-        app: paymentService
+        app: paymentservice
     spec:
       containers:
       - name: server
