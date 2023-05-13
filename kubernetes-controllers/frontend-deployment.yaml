@@ -16,7 +16,7 @@ spec:
     spec:
       containers:
       - name: server
-        image: shamrockoo4tune/fe-hipstershop:v0.0.2
+        image: shamrockoo4tune/fe-hipstershop:v0.0.1
         readinessProbe:
             initialDelaySeconds: 10
             httpGet:
