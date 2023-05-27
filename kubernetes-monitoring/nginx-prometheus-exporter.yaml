@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-prometheus-exporter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nginx-prometheus-exporter
+  template:
+    metadata:
+      labels:
+        app: nginx-prometheus-exporter
+    spec:
+      containers:
+        - name: nginx-prometheus-exporter
+          image: "nginx/nginx-prometheus-exporter:0.10.0"
+          imagePullPolicy: Always
+          args: ["-nginx.scrape-uri", "http://nginx/basic_status"]
+          ports:
+            - containerPort: 9113
+              name: http
+ 
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-prometheus-exporter
+  annotations:
+    prometheus.io/scrape: 'true'
+    prometheus.io/port:   '9113'
+  labels:
+    app: nginx-prometheus-exporter
+spec:
+  ports:
+    - name: http
+      port: 80
+      protocol: TCP
+      targetPort: 9113
+  selector:
+    app: nginx-prometheus-exporter
+  type: ClusterIP
+...
