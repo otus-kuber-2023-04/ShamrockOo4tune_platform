@@ -3,4 +3,6 @@ ShamrockOo4tune Platform repository
 
 Описания выполненых домашних заданий
 
-[ДЗ №1](./documentation/homework-1.MD)
+[Домашнее задание №1](/documentation/homework-1.MD)
+
+[Домашнее задание №2](/documentation/homework-2.MD)
