@@ -1,5 +1,0 @@
-{
-    "yaml.schemas": {
-        "https://json.schemastore.org/yamllint.json": "file:///home/anduser/ShamrockOo4tune_platform/kubernetes-monitoring/prometheus.yaml"
-    }
-}
