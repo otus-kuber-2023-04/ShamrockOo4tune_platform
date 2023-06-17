@@ -34,6 +34,10 @@ spec:
               - database
               - password
               - storage_size
+            # назначение ключа объекта yaml .status (пустой объект)
+            status:
+              x-kubernetes-preserve-unknown-fields: true
+              type: object
   names:                # различные форматы имени объекта CR
     kind: MySQL         # kind CR
     plural: mysqls      

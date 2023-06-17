@@ -16,6 +16,6 @@ spec:
       serviceAccountName: mysql-operator
       containers:
         - name: operator
-          image: "shamrockoo4tune/mysqloperator:v1"
+          image: "shamrockoo4tune/mysqloperator:v1.1"
           imagePullPolicy: "Always"
 ...
