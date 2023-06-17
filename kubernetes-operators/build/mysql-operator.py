@@ -4,6 +4,8 @@ import kubernetes
 import time
 from jinja2 import Environment, FileSystemLoader
 from yaml.loader import SafeLoader
+import logging
+import time
 
 def render_template(filename, vars_dict):
     env = Environment(loader=FileSystemLoader('./templates'))
@@ -45,6 +47,7 @@ def mysql_on_create(body, spec, **kwargs):
     password = body['spec']['password']
     database = body['spec']['database']
     storage_size = body['spec']['storage_size']
+    logging.info(f"A handler is called with body: {body}")
 
     # Генерируем JSON манифесты для деплоя
     persistent_volume = render_template(
@@ -116,7 +119,7 @@ def mysql_on_create(body, spec, **kwargs):
     api.create_namespaced_service('default', service)
     # Создаем mysql Deployment:
     api = kubernetes.client.AppsV1Api()
-    api.create_namespaced_deployment('default', deployment)
+    obj = api.create_namespaced_deployment('default', deployment)
     # Cоздаем PVC и PV для бэкапов:
     api = kubernetes.client.CoreV1Api()
     try:    
@@ -127,13 +130,20 @@ def mysql_on_create(body, spec, **kwargs):
         api.create_namespaced_persistent_volume_claim('default', backup_pvc)
     except kubernetes.client.rest.ApiException:
         pass
-
+    
     # Пытаемся восстановиться из backup
     api = kubernetes.client.BatchV1Api()
     try:
         api.create_namespaced_job('default', restore_job)
+        message = 'mysql-instance created with restore-job'
     except kubernetes.client.rest.ApiException:
+        message = 'mysql-instance created without restore-job'
         pass
+    
+    return {
+        'Message': message,
+        'mysql-name': obj.metadata.name
+    }
 
 @kopf.on.delete('otus.homework', 'v1', 'mysqls')
 def delete_object_make_backup(body, **kwargs):
@@ -168,3 +178,30 @@ def delete_object_make_backup(body, **kwargs):
     api.delete_persistent_volume(persistent_volume['metadata']['name'])
 
     return {'message': "mysql and its children resources deleted"}
+
+# Такое решение поменяет deployment и дочерние объекты, т.о. что переменные окружения будут содержать новый пароль, но
+# в базе пароль не изменился. как заходит со старым, так и заходит
+@kopf.on.update('otus.homework', 'v1', 'mysqls')
+# Функция, которая будет запускаться при обновлении объектов типа MySQL:
+def mysql_on_update_password(body, spec, status, **kwargs):
+    password = spec.get('password', None)
+    if not password:
+        raise kopf.PermanentError(f"Password must be set. Got {password!r}.")
+    name = status['mysql_on_create']['mysql-name']
+    image = body['spec']['image']
+    database = body['spec']['database']
+    
+    deployment = render_template(
+        'mysql-deployment.yml.j2',
+        {
+            'name': name,
+            'image': image,
+            'password': password,
+            'database': database
+        }
+    )
+
+    api = kubernetes.client.AppsV1Api()
+    obj = api.patch_namespaced_deployment(name=name, namespace='default', body=deployment)
+
+    logging.info(f"MySQL deployment child is updated: {obj}")
