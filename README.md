@@ -17,3 +17,4 @@ ShamrockOo4tune Platform repository
 
 [Домашнее задание №7](/documentation/homework-7.MD) Операторы, CustomResourceDefinition  
 
+[Домашнее задание №8](/documentation/homework-8.MD) Шаблонизация манифестов Kubernetesманифестов Kubernetes

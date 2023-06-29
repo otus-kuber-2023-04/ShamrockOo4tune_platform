@@ -1,0 +1,29 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: demo
+  namespace: default
+  annotations:
+    # add an annotation indicating the issuer to use.
+    cert-manager.io/issuer: selfsigned-issuer 
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: shamrockoo4tune.ru
+    http:
+      paths:
+      - backend:
+          service:
+            name: demo
+            port:
+              number: 80
+        path: /
+        pathType: Prefix
+  tls: # < placing a host in the TLS config will determine what ends up in the cert's subjectAltNames
+  - hosts:
+    - shamrockoo4tune.ru
+    secretName: shamrockoo4tune-selfsigned-cert # < cert-manager will store the created certificate in this secret.
+status:
+  loadBalancer: {}
+...
