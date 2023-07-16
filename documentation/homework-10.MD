@@ -39,7 +39,10 @@
 ![image 4.png placeholder](/documentation/img/hw-10/4.png)  
 ![image 5.png placeholder](/documentation/img/hw-10/5.png)  
 
-## gitops
+---
+<br>
+
+## GitOps
 
 ### nginx-ingress
 
@@ -63,6 +66,7 @@
    ```
    
 ### cert-manager
+
 Устанавливается согласно [официальной документации](https://cert-manager.io/docs/installation/helm/)  
 1. Добавляем репо
    ```bash
@@ -124,49 +128,49 @@
 
 ### ArgoCD
 1. Устанавливаем по [официальной документации](https://argo-cd.readthedocs.io/en/stable/getting_started/)
-  ```bash
-  $ kubectl create namespace argocd
-  $ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
-  ```
+   ```bash
+   $ kubectl create namespace argocd
+   $ kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+   ```
 2. Без отделльного clusterIssuer выставить ингресс не получилось, поэтому применяем [манифест](/kubernetes-gitops/argocd-cluster-issuer.yaml)
-  ```bash
-  $ kubectl apply -f argocd-cluster-issuer.yaml
-  ``` 
+   ```bash
+   $ kubectl apply -f argocd-cluster-issuer.yaml
+   ``` 
 
 3. Создаем [правило ингресса](/kubernetes-gitops/argocd_ingress_rule.yaml) для доступа ArgoCD согласно ~~[официальной документации](https://argo-cd.readthedocs.io/en/stable/operator-manual/ingress/)~~ [примера из github](https://github.com/argoproj/argo-cd/discussions/11052#discussioncomment-4045945)
-  ```bash
-  $ kubectl apply -f argocd_ingress_rule.yaml
-  ```
+   ```bash
+   $ kubectl apply -f argocd_ingress_rule.yaml
+   ```
 
-4. Установка ArgoCD cli
+4. Установка ArgoCD cli  
   Согласно [официальной документации](https://argo-cd.readthedocs.io/en/stable/cli_installation/) 
-  ```bash
-  $ curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
-  $ chmod u+x argocd-linux-amd64
-  $ sudo mv argocd-linux-amd64 /usr/local/bin/argocd
-  ```
+   ```bash
+   $ curl -sSL -o argocd-linux-amd64 https://github.com/argoproj/argo-cd/releases/latest/download/argocd-linux-amd64
+   $ chmod u+x argocd-linux-amd64
+   $ sudo mv argocd-linux-amd64 /usr/local/bin/argocd
+   ```
 
 5. Логин и смена пароля
-  ````bash
-  anduser@shamil:~$ argocd admin initial-password -n argocd
-  wRljjylOMNytIrGL
+   ````bash
+   anduser@shamil:~$ argocd admin initial-password -n argocd
+   wRljjylOMNytIrGL
   
-   This password must be only used for first time login. We strongly recommend you update the password using `argocd account update-password`.
-  anduser@shamil:~$ argocd login argocd.shamrockoo4tune.ru
-  WARNING: server certificate had error: x509: certificate is valid for ingress.local, not argocd.shamrockoo4tune.ru. Proceed insecurely (y/n)? y
-  WARN[0009] Failed to invoke grpc call. Use flag --grpc-web in grpc calls. To avoid this warning message, use flag --grpc-web. 
-  Username: admin
-  Password: 
-  'admin:login' logged in successfully
-  Context 'argocd.shamrockoo4tune.ru' updated
-  anduser@shamil:~$ argocd account update-password
-  WARN[0000] Failed to invoke grpc call. Use flag --grpc-web in grpc calls. To avoid this warning message, use flag --grpc-web. 
-  *** Enter password of currently logged in user (admin): 
-  *** Enter new password for user admin: 
-  *** Confirm new password for user admin: 
-  Password updated
-  Context 'argocd.shamrockoo4tune.ru' updated
-  ```
+    This password must be only used for first time login. We strongly recommend you update the password using `argocd account update-password`.
+   anduser@shamil:~$ argocd login argocd.shamrockoo4tune.ru
+   WARNING: server certificate had error: x509: certificate is valid for ingress.local, not argocd.shamrockoo4tune.ru. Proceed insecurely (y/n)? y
+   WARN[0009] Failed to invoke grpc call. Use flag --grpc-web in grpc calls. To avoid this warning message, use flag --grpc-web. 
+   Username: admin
+   Password: 
+   'admin:login' logged in successfully
+   Context 'argocd.shamrockoo4tune.ru' updated
+   anduser@shamil:~$ argocd account update-password
+   WARN[0000] Failed to invoke grpc call. Use flag --grpc-web in grpc calls. To avoid this warning message, use flag --grpc-web. 
+   *** Enter password of currently logged in user (admin): 
+   *** Enter new password for user admin: 
+   *** Confirm new password for user admin: 
+   Password updated
+   Context 'argocd.shamrockoo4tune.ru' updated
+   ```
 
 ### Harbor
 Потребуется репо с чартами
