@@ -1,0 +1,15 @@
+---
+expose:
+  type: ingress
+  ingress:
+    hosts:
+      core: harbor.shamrockoo4tune.ru
+    annotations:
+      kubernetes.io/ingress.class: nginx
+      kubernetes.io/tls-acme: "true"
+      cert-manager.io/cluster-issuer: "letsencrypt-prod"
+      cert-manager.io/acme-challenge-type: http01
+externalURL: https://harbor.shamrockoo4tune.ru
+notary:
+  enabled: false
+...

@@ -1,0 +1,16 @@
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: argocd-issuer-argocd-letsencrypt
+spec:
+  acme:
+    email: shamrockoo4tune@yandex.ru
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef:
+      name: argocd-letsencrypt-private-key
+    solvers:
+      - http01:
+          ingress:
+            class: nginx
+...
