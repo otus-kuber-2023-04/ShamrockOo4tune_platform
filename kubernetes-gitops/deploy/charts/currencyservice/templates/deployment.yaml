@@ -20,12 +20,12 @@ spec:
         env:
         - name: PORT
           value: "7000"
-        readinessProbe:
-          grpc:
-            port: 7000
-        livenessProbe:
-          grpc:
-            port: 7000
+        # readinessProbe:
+        #   grpc:
+        #     port: 7000
+        # livenessProbe:
+        #   grpc:
+        #     port: 7000
         resources:
           requests:
             cpu: 100m
