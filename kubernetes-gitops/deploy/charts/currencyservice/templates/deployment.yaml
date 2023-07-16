@@ -22,10 +22,10 @@ spec:
           value: "7000"
         readinessProbe:
           exec:
-            command: ["/bin/grpc_health_probe", "-addr=:7000", "-tls=true", "-tls-no-verify=true"]
+            command: ["/bin/grpc_health_probe", "-addr=:7000"]
         livenessProbe:
           exec:
-            command: ["/bin/grpc_health_probe", "-addr=:7000", "-tls=true", "-tls-no-verify=true"]
+            command: ["/bin/grpc_health_probe", "-addr=:7000"]
         resources:
           requests:
             cpu: 100m
