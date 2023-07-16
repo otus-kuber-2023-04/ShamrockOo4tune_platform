@@ -1,6 +1,6 @@
 image:
   repository: shamrockoo4tune/ob-frontend
-  tag: v0.0.3
+  tag: v0.0.5
 ingress:
   host: shop.shamrockoo4tune.ru
 environment: develop

@@ -1,6 +1,6 @@
 image:
   repository: shamrockoo4tune/ob-cartservice
-  tag: v0.0.1
+  tag: v0.0.5
 
 redis:
   cluster:
