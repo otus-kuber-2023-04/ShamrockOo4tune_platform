@@ -20,8 +20,8 @@ spec:
         env:
         - name: PORT
           value: "9555"
-        - name: JAEGER_SERVICE_ADDR
-          value: "jaeger-collector.observability.svc.cluster.local:14268"
+        # - name: JAEGER_SERVICE_ADDR
+        #   value: "jaeger-collector.observability.svc.cluster.local:14268"
         resources:
           requests:
             cpu: 200m
