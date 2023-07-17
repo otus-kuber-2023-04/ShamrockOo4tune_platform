@@ -49,6 +49,8 @@ spec:
     kind: Pod
   - group: 'apps'
     kind: ReplicaSet
+  - group: ''
+    kind: ConfigMap
 
   # Enables namespace orphaned resource monitoring.
   orphanedResources:
@@ -57,7 +59,7 @@ spec:
   roles:
   # A role which provides read-only access to all applications in the project
   - name: read-only
-    description: Read-only privileges to my-project
+    description: Read-only privileges to shop
     policies:
     - p, proj:shop:read-only, applications, get, shop/*, allow
     groups:

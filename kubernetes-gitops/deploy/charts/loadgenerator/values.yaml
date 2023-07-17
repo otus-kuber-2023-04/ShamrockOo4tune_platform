@@ -1,5 +1,5 @@
 image:
   repository: shamrockoo4tune/ob-loadgenerator
-  tag: v0.0.5
+  tag: v0.0.7
 ingress:
   host: develop.shamrockoo4tune.ru
