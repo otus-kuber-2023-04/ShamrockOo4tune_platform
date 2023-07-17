@@ -6,14 +6,15 @@
 
 * Инфраструктурный репозиторий
   Согласно методических рекомендаций - инфраструктурный репозиторий размещен в GitLab: [iac-for-kubernetes-gitops](https://gitlab.com/shamrockoo4tune/iac-for-kubernetes-gitops)
-* Репозиторий с копией приложения: [microservices-demo](https://gitlab.com/shamrockoo4tune/microservices-demo)
+* Репозиторий с копией приложения: [microservices-demo](https://gitlab.com/shamrockoo4tune/microservices-demo)   
+  Dockerfiles приложений были дополнены утилитой **grpc_health_probe** для реализации probes  
 
 ---
 <br>
 
-## Создание Helm чартовСоздание Helm чарто
+## Создание Helm чартов
 
-[Helm charts](/kubernetes-gitops/deploy/charts/) - были скопированы из [демонстрационного репозитория](https://gitlab.com/express42/kubernetes-platform-demo/microservices-demo/)
+[Helm charts](/kubernetes-gitops/deploy/charts/) - были скопированы из [демонстрационного репозитория](https://gitlab.com/express42/kubernetes-platform-demo/microservices-demo/) и немного подрихтованы  
 
 ---
 <br>
@@ -28,7 +29,7 @@
 ## Continuous Integration
 
 Собрал и поместил в Docker Hub образы приложений с тегами на основе симантических версий:
-![image 1.png placeholder](/documentation/img/hw-10/1.png)
+![image 1.png placeholder](/documentation/img/hw-10/1.png)  
 
 ---
 <br>
@@ -171,24 +172,10 @@
    Password updated
    Context 'argocd.shamrockoo4tune.ru' updated
    ```
+6. Применяем ресурсы [AppProject](/kubernetes-gitops/project.yaml) и  манифесты Application для приложений
 
-### Harbor
-Потребуется репо с чартами
-1. Добавим в Helm репо с Harbor
-  ```bash
-  $ helm repo add harbor https://helm.goharbor.io
-  ```
+7. Наблюдаем UI ArgoCD
+   ![img 7.png placeholder](/documentation/img/hw-10/7.png)  
 
-2. Установим harbor c кастомизированными [Values](/kubernetes-gitops/harbor-values.yaml)
-  ```bash
-  $ helm install harbor harbor/harbor -f harbor-values.yaml --namespace harbor --create-namespace
-  ``` 
-
-3. В UI создаетм проект, копируем сертификат на машину, устанавливаем локально
-  ```bash
-  $ sudo cp ~/Downloads/ca.crt /usr/local/share/ca-certificates
-  $ sudo update-ca-certificates
-  ```
-  
 ---
 <br>  
