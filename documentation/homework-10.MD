@@ -177,5 +177,8 @@
 7. Наблюдаем UI ArgoCD
    ![img 7.png placeholder](/documentation/img/hw-10/7.png)  
 
+8. Идем в магазин
+   ![img 8.png placeholder](/documentation/img/hw-10/8.png)
+   
 ---
 <br>  
