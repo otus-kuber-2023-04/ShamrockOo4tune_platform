@@ -17,9 +17,9 @@ spec:
 
   # Source of the application manifests
   source:
-    repoURL: 'https://github.com/otus-kuber-2023-04/ShamrockOo4tune_platform.git' # Can point to either a Helm chart repo or a git repo.
-    targetRevision: kubernetes-gitops # For Helm, this refers to the chart version.
-    path: kubernetes-gitops/deploy/charts/adservice # This has no meaning for Helm charts pulled directly from a Helm repo instead of git.
+    repoURL: 'https://gitlab.com/shamrockoo4tune/microservices-demo-cd' # Can point to either a Helm chart repo or a git repo.
+    targetRevision: main # For Helm, this refers to the chart version.
+    path: deploy/charts/adservice # This has no meaning for Helm charts pulled directly from a Helm repo instead of git.
     
     # helm specific config
     helm:
