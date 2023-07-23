@@ -51,6 +51,12 @@ spec:
     kind: ReplicaSet
   - group: ''
     kind: ConfigMap
+  - group: 'networking.istio.io'
+    kind: 'Gateway'
+  - group: 'networking.istio.io'
+    kind: 'VirtualService'
+  - group: 'flagger.app'
+    kind: 'Canary'
 
   # Enables namespace orphaned resource monitoring.
   orphanedResources:
