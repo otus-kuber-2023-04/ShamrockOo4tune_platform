@@ -12,3 +12,5 @@ ShamrockOo4tune Platform repository
 [Домашнее задание №4](/documentation/homework-4.MD) Volumes, Storages, StatefulSet  
 
 [Домашнее задание №5](/documentation/homework-5.MD) Security  
+
+[Домашнее задание №6](/documentation/homework-6.MD) Monitoring  
