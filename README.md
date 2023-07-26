@@ -18,3 +18,9 @@ ShamrockOo4tune Platform repository
 [Домашнее задание №7](/documentation/homework-7.MD) Операторы, CustomResourceDefinition  
 
 [Домашнее задание №8](/documentation/homework-8.MD) Шаблонизация манифестов Kubernetesманифестов Kubernetes
+
+[Домашнее задание №9](/documentation/homework-9.MD) Сервисы централизованного логирования для компонентов Kubernetes и приложений   
+
+[Домашнее задание №10](/documentation/homework-10.MD) GitOps и инструменты поставки    
+
+[Домашнее задание №11](/documentation/homework-11.MD) Хранилище секретов для приложений. Vault  
