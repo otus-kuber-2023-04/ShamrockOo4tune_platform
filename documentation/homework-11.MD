@@ -475,5 +475,293 @@ clusterrolebinding.rbac.authorization.k8s.io/role-tokenreview-binding created
 
 ## Подготовим переменные для записи в конфиг кубер авторизации
 
-$ kubectl -n vault get sa vault-auth -o jsonpath="{.secrets[*]['name']}"
-vault-auth-token-4wrws
+```bash
+$ export VAULT_SA_NAME=$(k -n vault get sa vault-auth -o jsonpath="{.secrets[*]['name']}")
+$ export SA_JWT_TOKEN=$(k -n vault get secret $VAULT_SA_NAME -o jsonpath="{.data.token}" | base64 --decode; echo)
+$ export SA_CA_CRT=$(k -n vault get secret $VAULT_SA_NAME -o jsonpath="{.data['ca\.crt']}" | base64 --decode; echo)
+$ export K8S_HOST=$(k cluster-info | grep 'Kubernetes control plane' | awk '/https/ {print $NF}' | sed 's/\x1b\[[0-9;]*m//g')
+```
+
+### Обратите внимание на конструкцию sed **'s/\x1b\[[0-9;]*m//g'** что по вашему она делает?
+> Убирает цветовое кодирование символов  
+
+---
+<br>
+
+## Запишем конфиг в vault
+
+```bash
+$ k -n vault exec -it vault-0 -- vault write auth/kubernetes/config \
+    token_reviewer_jwt="$SA_JWT_TOKEN" \
+    kubernetes_host="$K8S_HOST" \
+    kubernetes_ca_cert="$SA_CA_CRT"
+Success! Data written to: auth/kubernetes/config
+```
+
+---
+<br>
+
+## Создадим файл политики
+```bash
+tee otus-policy.hcl <<EOF
+path "otus/otus-ro/*" {
+  capabilities = ["read", "list"]
+}
+path "otus/otus-rw/*" {
+  capabilities = ["read", "create", "list"]
+}
+EOF
+```
+
+---
+<br>
+
+## Cоздадим политку и роль в vault
+
+```bash
+$ k -n vault cp otus-policy.hcl vault-0:/vault/
+
+$ k -n vault exec -it vault-0 -- vault policy write otus-policy /vault/otus-policy.hcl
+Success! Uploaded policy: otus-policy
+
+$ k -n vault exec -it vault-0 -- vault write auth/kubernetes/role/otus \
+    bound_service_account_names=vault-auth \
+    bound_service_account_namespaces=vault policies=otus-policy ttl=24h
+Success! Data written to: auth/kubernetes/role/otus
+```
+
+---
+<br>
+
+## Проверим как работает авторизация
+### Создадим под с привязанным сервис аккоунтом и установим туда **curl** и **jq**
+
+```bash
+$ k -n vault run -i --tty --rm tmp --overrides='{"spec": { "serviceAccount": "vault-auth" }}' --image alpine:3.7
+If you don't see a command prompt, try pressing enter.
+
+/ # apk add jq curl
+fetch http://dl-cdn.alpinelinux.org/alpine/v3.7/main/x86_64/APKINDEX.tar.gz
+fetch http://dl-cdn.alpinelinux.org/alpine/v3.7/community/x86_64/APKINDEX.tar.gz
+(1/6) Installing ca-certificates (20190108-r0)
+(2/6) Installing libssh2 (1.9.0-r1)
+(3/6) Installing libcurl (7.61.1-r3)
+(4/6) Installing curl (7.61.1-r3)
+(5/6) Installing oniguruma (6.6.1-r0)
+(6/6) Installing jq (1.5-r5)
+Executing busybox-1.27.2-r11.trigger
+Executing ca-certificates-20190108-r0.trigger
+OK: 7 MiB in 19 packages
+
+/ # VAULT_ADDR=http://vault:8200
+
+/ # KUBE_TOKEN=$(cat /var/run/secrets/kubernetes.io/serviceaccount/token)
+
+/ # curl -s -X POST -d '{"jwt": "'$KUBE_TOKEN'", "role": "otus"}' $VAULT_ADDR/v1/auth/kubernetes/login | jq 
+{
+  "request_id": "10cbfabb-17b8-ad58-c5ff-a6d22cb26019",
+  "lease_id": "",
+  "renewable": false,
+  "lease_duration": 0,
+  "data": null,
+  "wrap_info": null,
+  "warnings": null,
+  "auth": {
+    "client_token": "hvs.CAESIHO32R8o819G5xYdXGuUgSvdEi-iAWnTnfQ4_pv7Yg-QGh4KHGh2cy5WdUQwODBlbFFrY2VoZ3dsYllGbHltWFk",
+    "accessor": "8B6l1JSL4ZzDNGnUmAlNIDM6",
+    "policies": [
+      "default",
+      "otus-policy"
+    ],
+    "token_policies": [
+      "default",
+      "otus-policy"
+    ],
+    "metadata": {
+      "role": "otus",
+      "service_account_name": "vault-auth",
+      "service_account_namespace": "vault",
+      "service_account_secret_name": "",
+      "service_account_uid": "709003e4-fa77-426c-9480-761b343bbe27"
+    },
+    "lease_duration": 86400,
+    "renewable": true,
+    "entity_id": "7a447cc4-f61d-adf2-c67a-da133ad1b7a1",
+    "token_type": "service",
+    "orphan": true,
+    "mfa_requirement": null,
+    "num_uses": 0
+  }
+}
+
+/ # TOKEN=$(curl -k \
+>                -s \
+>                -X POST \
+>                -d '{"jwt": "'$KUBE_TOKEN'", "role": "otus"}' \
+>                $VAULT_ADDR/v1/auth/kubernetes/login \
+>           | jq '.auth.client_token' \
+>           | awk -F\" '{print $2}')
+
+```
+
+---
+<br>
+
+## Прочитаем записанные ранее секреты и попробуем их обновить
+### Проверка чтения  
+
+```bash
+# продолжение предыдущей сессии оболочки
+/ # curl -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-ro/config
+{"request_id":"cf11fbfe-b5d8-01a5-6917-baa777913a71","lease_id":"","renewable":false,"lease_duration":2764800,"data":{"password":"asajkjkahs","username":"otus"},"wrap_info":null,"warnings":null,"auth":null}
+
+/ # curl -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-rw/config
+{"errors":[]}
+```
+
+### Проверка записи
+```bash
+/ # curl -X POST -d '{"bar": "baz"}' -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-rw/config
+
+/ # curl -X POST -d '{"bar": "baz"}' -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-ro/config
+{"errors":["1 error occurred:\n\t* permission denied\n\n"]}
+
+/ # curl -X POST -d '{"bar": "baz"}' -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-rw/config1
+ 
+/ # curl -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-rw/config
+{"request_id":"ab3be92c-b732-2132-cd7f-8b3541406a7e","lease_id":"","renewable":false,"lease_duration":2764800,"data":{"bar":"baz"},"wrap_info":null,"warnings":null,"auth":null}
+. 
+/ # curl -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-rw/config1
+{"request_id":"eb52fb1d-d9ca-580a-4468-f76db7cb156b","lease_id":"","renewable":false,"lease_duration":2764800,"data":{"bar":"baz"},"wrap_info":null,"warnings":null,"auth":null}
+ 
+/ # curl -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-ro/config
+{"request_id":"a03536c5-f996-12b1-ea2e-66485828e9b4","lease_id":"","renewable":false,"lease_duration":2764800,"data":{"password":"asajkjkahs","username":"otus"},"wrap_info":null,"warnings":null,"auth":null}
+
+/ # curl -X POST -d '{"bar": "baz"}' -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-rw/config1
+{"errors":["1 error occurred:\n\t* permission denied\n\n"]}
+
+/ # curl -X POST -d '{"bar": "baz"}' -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-rw/config
+{"errors":["1 error occurred:\n\t* permission denied\n\n"]}
+
+```
+
+---
+<br>
+
+## Разберемся с ошибками при записи  
+
+Политики позволяли создать ключи, но не обновлять их  
+Изменим политику так, чтобы можно было обновлять. Применим новый [файл](/kubernetes-vault/otus-policy-updated.hcl):  
+```bash
+$ k -n vault cp otus-policy-updated.hcl vault-0:/vault/
+
+$ k -n vault exec -it vault-0 -- vault policy write otus-policy /vault/otus-policy-updated.hcl
+Success! Uploaded policy: otus-policy
+```   
+Идем обратно в тестовый под/контейнер:  
+```bash
+# Продолжение сессии
+
+/ # curl -X POST -d '{"bar": "new_baz"}' -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-rw/config
+
+/ # curl -X POST -d '{"bar": "new_baz"}' -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-rw/config1
+ 
+/ # curl -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-rw/config
+{"request_id":"7333cfa7-5959-ebad-7049-923cc96b0cfb","lease_id":"","renewable":false,"lease_duration":2764800,"data":{"bar":"new_baz"},"wrap_info":null,"warnings":null,"auth":null}
+
+/ # curl -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-rw/config1
+{"request_id":"b6595f94-388f-ee9a-3e3e-75a705367326","lease_id":"","renewable":false,"lease_duration":2764800,"data":{"bar":"new_baz"},"wrap_info":null,"warnings":null,"auth":null}
+```
+
+---
+<br>
+
+## Use case использования авторизации через k8s
+
+* Авторизуемся через vault-agent и получим клиентский токен
+* Через consul-template достанем секрет и положим его в nginx
+* Итог - nginx получил секрет из волта, не зная ничего про волт
+
+---
+<br>
+
+## Заберем репозиторий с примерами
+
+```bash
+$ git clone https://github.com/hashicorp/vault-guides.git
+$ cd vault-guides/identity/vault-agent-k8s-demo
+```
+### Скопируем и скорректируем конфиги с учетом ранее созданных ролей и секретов  
+* [конфигмапа](/kubernetes-vault/configs-k8s/configmap.yaml)
+* [манифест пода vault agent](/kubernetes-vault/configs-k8s/example-k8s-spec.yaml)  
+
+---
+<br>
+
+## Запускаем пример
+
+```bash
+$ k apply -f ./configs-k8s/configmap.yaml 
+configmap/example-vault-agent-config created
+
+$ k -n vault get configmap example-vault-agent-config -o yaml 
+apiVersion: v1
+data:
+  vault-agent-config.hcl: |
+    # Comment this out if running as sidecar instead of initContainer
+    exit_after_auth = true
+
+    pid_file = "/home/vault/pidfile"
+
+    auto_auth {
+        method "kubernetes" {
+            mount_path = "auth/kubernetes"
+            config = {
+                role = "otus"
+            }
+        }
+
+        sink "file" {
+            config = {
+                path = "/home/vault/.vault-token"
+            }
+        }
+    }
+
+    template {
+    destination = "/etc/secrets/index.html"
+    contents = <<EOT
+    <html>
+    <body>
+    <p>Some secrets:</p>
+    {{- with secret "otus/otus-ro/config" }}
+    <ul>
+    <li><pre>username: {{ .Data.username }}</pre></li>
+    <li><pre>password: {{ .Data.password }}</pre></li>
+    </ul>
+    {{ end }}
+    </body>
+    </html>
+    EOT
+    }
+kind: ConfigMap
+metadata:
+  annotations:
+    kubectl.kubernetes.io/last-applied-configuration: |
+      {"apiVersion":"v1","data":{"vault-agent-config.hcl":"# Comment this out if running as sidecar instead of initContainer\nexit_after_auth = true\n\npid_file = \"/home/vault/pidfile\"\n\nauto_auth {\n    method \"kubernetes\" {\n        mount_path = \"auth/kubernetes\"\n        config = {\n            role = \"otus\"\n        }\n    }\n\n    sink \"file\" {\n        config = {\n            path = \"/home/vault/.vault-token\"\n        }\n    }\n}\n\ntemplate {\ndestination = \"/etc/secrets/index.html\"\ncontents = \u003c\u003cEOT\n\u003chtml\u003e\n\u003cbody\u003e\n\u003cp\u003eSome secrets:\u003c/p\u003e\n{{- with secret \"otus/otus-ro/config\" }}\n\u003cul\u003e\n\u003cli\u003e\u003cpre\u003eusername: {{ .Data.username }}\u003c/pre\u003e\u003c/li\u003e\n\u003cli\u003e\u003cpre\u003epassword: {{ .Data.password }}\u003c/pre\u003e\u003c/li\u003e\n\u003c/ul\u003e\n{{ end }}\n\u003c/body\u003e\n\u003c/html\u003e\nEOT\n}\n"},"kind":"ConfigMap","metadata":{"annotations":{},"name":"example-vault-agent-config","namespace":"vault"}}
+  creationTimestamp: "2023-07-27T11:52:21Z"
+  name: example-vault-agent-config
+  namespace: vault
+  resourceVersion: "830953"
+  uid: c6e3812a-edda-47b4-a3a6-eb1ca28b13be
+
+$ k apply -f ./configs-k8s/example-k8s-spec.yaml
+pod/vault-agent-example created
+```
+
+---
+<br>
+
+## Проверка
+### Законнектимся к поду nginx и вытащим оттуда index.html
+```bash
