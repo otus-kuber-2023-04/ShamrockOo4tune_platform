@@ -612,10 +612,10 @@ OK: 7 MiB in 19 packages
 
 ```bash
 # продолжение предыдущей сессии оболочки
-/ # curl -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-ro/config
+/ # curl -s -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-ro/config
 {"request_id":"cf11fbfe-b5d8-01a5-6917-baa777913a71","lease_id":"","renewable":false,"lease_duration":2764800,"data":{"password":"asajkjkahs","username":"otus"},"wrap_info":null,"warnings":null,"auth":null}
 
-/ # curl -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-rw/config
+/ # curl -s -H "X-Vault-Token:$TOKEN" $VAULT_ADDR/v1/otus/otus-rw/config
 {"errors":[]}
 ```
 
@@ -754,7 +754,10 @@ metadata:
   namespace: vault
   resourceVersion: "830953"
   uid: c6e3812a-edda-47b4-a3a6-eb1ca28b13be
+```
 
+Создаем vault-agent-example Pod:
+```bash
 $ k apply -f ./configs-k8s/example-k8s-spec.yaml
 pod/vault-agent-example created
 ```
@@ -764,4 +767,230 @@ pod/vault-agent-example created
 
 ## Проверка
 ### Законнектимся к поду nginx и вытащим оттуда index.html
+Init-контейнер с Vault-agent сходил в Vault и достал секреты  
+Проверяем наличие проброшенных секретов в nginx:  
 ```bash
+$ k -n vault exec -it vault-agent-example -- cat /usr/share/nginx/html/index.html
+Defaulted container "nginx-container" out of: nginx-container, vault-agent (init)
+<html>
+<body>
+<p>Some secrets:</p>
+<ul>
+<li><pre>username: otus</pre></li>
+<li><pre>password: asajkjkahs</pre></li>
+</ul>
+
+</body>
+</html>
+```
+
+---
+<br>
+
+## CA на базе vault
+
+### Включим pki секретс
+```bash
+$ k -n vault  exec -it vault-0 -- vault secrets enable pki
+Success! Enabled the pki secrets engine at: pki/
+
+$ k -n vault  exec -it vault-0 -- vault secrets tune -max-lease-ttl=87600h pki
+Success! Tuned the secrets engine at: pki/
+
+$ k -n vault  exec -it vault-0 -- vault write -field=certificate pki/root/generate/internal common_name="exmaple.ru" ttl=87600h > CA_cert.crt
+```
+
+---
+<br>
+
+## Пропишем урлы для ca и отозванных сертификатовсертификатов
+
+```bash
+$ k -n vault  exec -it vault-0 -- vault write pki/config/urls issuing_certificates="http://vault:8200/v1/pki/ca" crl_distribution_points="http://vault:8200/v1/pki/crl"
+Key                        Value
+---                        -----
+crl_distribution_points    [http://vault:8200/v1/pki/crl]
+enable_templating          false
+issuing_certificates       [http://vault:8200/v1/pki/ca]
+ocsp_servers               []
+```
+
+---
+<br>
+
+## Cоздадим промежуточный сертификат
+
+```bash
+$ k -n vault exec -it vault-0 -- vault secrets enable --path=pki_int pki
+Success! Enabled the pki secrets engine at: pki_int/
+
+$ k -n vault exec -it vault-0 -- vault secrets tune -max-lease-ttl=87600h pki_int
+Success! Tuned the secrets engine at: pki_int/
+
+$ k -n vault exec -it vault-0 -- vault write -format=json pki_int/intermediate/generate/internal common_name="example.ru Intermediate Authority" | jq -r '.data.csr' > pki_intermediate.csr
+```
+---
+<br>
+
+## Пропишем промежуточный сертификат в vault
+
+```bash
+$ k -n vault cp pki_intermediate.csr vault-0:./vault/
+
+$ k -n vault exec -it vault-0 -- vault write -format=json pki/root/sign-intermediate csr=@/vault/pki_intermediate.csr format=pem_bundle ttl="43800h" | jq -r '.data.certificate' > intermediate.cert.pem
+
+$ k -n vault cp intermediate.cert.pem vault-0:./vault/
+
+$ k -n vault exec -it vault-0 -- vault write pki_int/intermediate/set-signed certificate=@/vault/intermediate.cert.pem
+WARNING! The following warnings were returned from Vault:
+
+  * This mount hasn't configured any authority information access (AIA)
+  fields; this may make it harder for systems to find missing certificates
+  in the chain or to validate revocation status of certificates. Consider
+  updating /config/urls or the newly generated issuer with this information.
+
+Key                 Value
+---                 -----
+existing_issuers    <nil>
+existing_keys       <nil>
+imported_issuers    [f3579e2b-2891-a00b-63e9-0d5a53c748a7 0817b4e7-6aff-d7ec-ac47-f35f618595cb]
+imported_keys       <nil>
+mapping             map[0817b4e7-6aff-d7ec-ac47-f35f618595cb: f3579e2b-2891-a00b-63e9-0d5a53c748a7:a3b80a51-9ff0-5d6f-378d-612901c524f7]
+```
+
+---
+<br>
+
+## Создадим и отзовем новые сертификаты
+
+### Создадим роль для выдачи с ертификатов
+
+```bash
+$ k -n vault exec -it vault-0 -- vault write pki_int/roles/example-dot-ru allowed_domains="example.ru" allow_subdomains=true max_ttl="720h"
+Key                                   Value
+---                                   -----
+allow_any_name                        false
+allow_bare_domains                    false
+allow_glob_domains                    false
+allow_ip_sans                         true
+allow_localhost                       true
+allow_subdomains                      true
+allow_token_displayname               false
+allow_wildcard_certificates           true
+allowed_domains                       [example.ru]
+allowed_domains_template              false
+allowed_other_sans                    []
+allowed_serial_numbers                []
+allowed_uri_sans                      []
+allowed_uri_sans_template             false
+allowed_user_ids                      []
+basic_constraints_valid_for_non_ca    false
+client_flag                           true
+cn_validations                        [email hostname]
+code_signing_flag                     false
+country                               []
+email_protection_flag                 false
+enforce_hostnames                     true
+ext_key_usage                         []
+ext_key_usage_oids                    []
+generate_lease                        false
+issuer_ref                            default
+key_bits                              2048
+key_type                              rsa
+key_usage                             [DigitalSignature KeyAgreement KeyEncipherment]
+locality                              []
+max_ttl                               720h
+no_store                              false
+not_after                             n/a
+not_before_duration                   30s
+organization                          []
+ou                                    []
+policy_identifiers                    []
+postal_code                           []
+province                              []
+require_cn                            true
+server_flag                           true
+signature_bits                        256
+street_address                        []
+ttl                                   0s
+use_csr_common_name                   true
+use_csr_sans                          true
+use_pss                               false
+```
+
+### Создадим и отзовем сертификат
+
+```bash
+$ k -n vault exec -it vault-0 -- vault write pki_int/issue/example-dot-ru common_name="gitlab.example.ru" ttl="24h"
+Key                 Value
+---                 -----
+ca_chain            [-----BEGIN CERTIFICATE-----
+MIIDnDCCAoSgAwIBAgIUJ8uva1khPYNlEZahIuUbodNAvkMwDQYJKoZIhvcNAQEL
+...
+...
+...
+9bUFdRbSlZpIr1vGmY+O6A==
+-----END CERTIFICATE----- -----BEGIN CERTIFICATE-----
+MIIDMjCCAhqgAwIBAgIUEUKdW/WcoDnqd83ESxxzZU7icJQwDQYJKoZIhvcNAQEL
+...
+...
+...
+6mtdDaEH
+-----END CERTIFICATE-----]
+certificate         -----BEGIN CERTIFICATE-----
+MIIDZzCCAk+gAwIBAgIUdN15jUJHXw5Z6EKM5ii/4FuEAuQwDQYJKoZIhvcNAQEL
+...
+...
+...
+yfKxwsdlAuAShC4=
+-----END CERTIFICATE-----
+expiration          1690787428
+issuing_ca          -----BEGIN CERTIFICATE-----
+MIIDnDCCAoSgAwIBAgIUJ8uva1khPYNlEZahIuUbodNAvkMwDQYJKoZIhvcNAQEL
+...
+...
+...
+9bUFdRbSlZpIr1vGmY+O6A==
+-----END CERTIFICATE-----
+private_key         -----BEGIN RSA PRIVATE KEY-----
+MIIEpAIBAAKCAQEA8BijAXuwPCITwXW60WepTF9/n9V+yLgPQZ68AgpEiuqXbTSj
+...
+...
+...
+g+MpRm7xbYV3zxLQ39fqS1eL8cFI31HEyla7QZiJK/nGCkkgG0eISg==
+-----END RSA PRIVATE KEY-----
+private_key_type    rsa
+serial_number       74:dd:79:8d:42:47:5f:0e:59:e8:42:8c:e6:28:bf:e0:5b:84:02:e4
+
+# отзыв сертификата
+$ k -n vault exec -it vault-0 -- vault write pki_int/revoke serial_number="74:dd:79:8d:42:47:5f:0e:59:e8:42:8c:e6:28:bf:e0:5b:84:02:e4"
+Key                        Value
+---                        -----
+revocation_time            1690701194
+revocation_time_rfc3339    2023-07-30T07:13:14.577958874Z
+state                      revoked
+```
+
+---
+<br>
+
+## 🐍 Задание со 🌟 (1)
+реализовать доступ к vault через https  
+в README.md описать последовательность действий  
+предоставить примеры работы курлом  
+
+---
+<br>
+
+## 🐍 Задание со 🌟 (2)
+Настроить autounseal  
+провайдер для autoanseal на ваш выбор  
+описать все в README.md  
+
+---
+<br>
+
+## 🐍 Задание со 🌟 (3)
+Настроить lease временных секретов для доступа к БД  
+Описать процесс в README.md  
+
