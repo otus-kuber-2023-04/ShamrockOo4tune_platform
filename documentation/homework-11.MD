@@ -975,9 +975,307 @@ state                      revoked
 <br>
 
 ## 🐍 Задание со 🌟 (1)
-реализовать доступ к vault через https  
-в README.md описать последовательность действий  
-предоставить примеры работы курлом  
+* реализовать доступ к vault через https  
+* в README.md описать последовательность действий  
+* предоставить примеры работы курлом  
+
+### Внешний HTTPS доступ
+Активируем через ингрес. Т.к. в кластере установлен cert-manager, и есть clusterIssuer, - то воспользуюсь ими  
+Применю манифест для ингресс правила [ingress-vault.yaml](/kubernetes-vault/ingress-vault.yaml)  
+![img 1.png placeholder](/documentation/img/hw-11/1.png)  
+
+### Сквозной TLS
+
+По интрукции из [официальной документации](https://developer.hashicorp.com/vault/tutorials/kubernetes/kubernetes-minikube-tls)  
+
+#### Создать сертификат
+```bash
+# создаем временную рабочую директорию
+$ mkdir /tmp/vault
+
+# Сетим переменные
+$ export VAULT_K8S_NAMESPACE="vault" \
+> export VAULT_HELM_RELEASE_NAME="vault" \
+> export VAULT_SERVICE_NAME="vault-internal" \
+> export K8S_CLUSTER_NAME="cluster.local" \
+> export WORKDIR=/tmp/vault
+
+# Генерируем приватный ключ
+$ openssl genrsa -out ${WORKDIR}/vault.key 2048
+Generating RSA private key, 2048 bit long modulus (2 primes)
+.......+++++
+..........................................................................................................+++++
+e is 65537 (0x010001)
+```
+
+#### Создаем Certificate Signing Request (CSR)  
+
+```bash
+# Готовим конфиг файл для CSR
+$ cat > ${WORKDIR}/vault-csr.conf <<EOF
+> [req]
+> default_bits = 2048
+> prompt = no
+> encrypt_key = yes
+> default_md = sha256
+> distinguished_name = kubelet_serving
+> req_extensions = v3_req
+> [ kubelet_serving ]
+> O = system:nodes
+> CN = system:node:*.${VAULT_K8S_NAMESPACE}.svc.${K8S_CLUSTER_NAME}
+> [ v3_req ]
+> basicConstraints = CA:FALSE
+> keyUsage = nonRepudiation, digitalSignature, keyEncipherment, dataEncipherment
+> extendedKeyUsage = serverAuth, clientAuth
+> subjectAltName = @alt_names
+> [alt_names]
+> DNS.1 = *.${VAULT_SERVICE_NAME}
+> DNS.2 = *.${VAULT_SERVICE_NAME}.${VAULT_K8S_NAMESPACE}.svc.${K8S_CLUSTER_NAME}
+> DNS.3 = *.${VAULT_K8S_NAMESPACE}
+> IP.1 = 127.0.0.1
+> EOF
+
+# Генерируем CSR
+$ openssl req -new -key ${WORKDIR}/vault.key -out ${WORKDIR}/vault.csr -config ${WORKDIR}/vault-csr.conf
+```
+
+#### Выпускаем сертификат
+
+```bash
+# Создаем манифест с CSR
+$ cat > ${WORKDIR}/csr.yaml <<EOF
+> apiVersion: certificates.k8s.io/v1
+> kind: CertificateSigningRequest
+> metadata:
+>    name: vault.svc
+> spec:
+>    signerName: kubernetes.io/kubelet-serving
+>    expirationSeconds: 8640000
+>    request: $(cat ${WORKDIR}/vault.csr|base64|tr -d '\n')
+>    usages:
+>    - digital signature
+>    - key encipherment
+>    - server auth
+> EOF
+
+# Отправляем манифест CSR в API server
+$ kubectl create -f ${WORKDIR}/csr.yaml
+certificatesigningrequest.certificates.k8s.io/vault.svc created
+
+# Аппрувим CSR в API server
+$ kubectl certificate approve vault.svc
+certificatesigningrequest.certificates.k8s.io/vault.svc approved
+
+# Проверяем выпуск сертификата
+$ kubectl get csr vault.svc
+NAME        AGE   SIGNERNAME                      REQUESTOR              REQUESTEDDURATION   CONDITION
+vault.svc   24s   kubernetes.io/kubelet-serving   aje17l05p35762j5o6um   100d                Approved,Issued
+```
+
+#### Сохраняем сертификат и ключ в секреты kubernetes
+
+```bash
+# Извлекаем сертификат
+$ kubectl get csr vault.svc -o jsonpath='{.status.certificate}' | openssl base64 -d -A -out ${WORKDIR}/vault.crt
+
+# Извлекаем CA сертификат
+$ kubectl config view \
+> --raw \
+> --minify \
+> --flatten \
+> -o jsonpath='{.clusters[].cluster.certificate-authority-data}' \
+> | base64 -d > ${WORKDIR}/vault.ca
+
+# Создаем TLS секрет
+$ kubectl create secret generic vault-ha-tls \
+>    -n $VAULT_K8S_NAMESPACE \
+>    --from-file=vault.key=${WORKDIR}/vault.key \
+>    --from-file=vault.crt=${WORKDIR}/vault.crt \
+>    --from-file=vault.ca=${WORKDIR}/vault.ca
+secret/vault-ha-tls created
+```
+
+#### Передеплоим vault кластер
+
+```bash
+# Создадим overrides.yaml
+cat > ${WORKDIR}/overrides.yaml <<EOF
+global:
+   enabled: true
+   tlsDisable: false
+injector:
+   enabled: true
+server:
+   extraEnvironmentVars:
+      VAULT_CACERT: /vault/userconfig/vault-ha-tls/vault.ca
+      VAULT_TLSCERT: /vault/userconfig/vault-ha-tls/vault.crt
+      VAULT_TLSKEY: /vault/userconfig/vault-ha-tls/vault.key
+   volumes:
+      - name: userconfig-vault-ha-tls
+        secret:
+         defaultMode: 420
+         secretName: vault-ha-tls
+   volumeMounts:
+      - mountPath: /vault/userconfig/vault-ha-tls
+        name: userconfig-vault-ha-tls
+        readOnly: true
+   standalone:
+      enabled: false
+   affinity: ""
+   ha:
+      enabled: true
+      replicas: 3
+      raft:
+         enabled: true
+         setNodeId: true
+         config: |
+            ui = true
+            listener "tcp" {
+               tls_disable = 0
+               address = "[::]:8200"
+               cluster_address = "[::]:8201"
+               tls_cert_file = "/vault/userconfig/vault-ha-tls/vault.crt"
+               tls_key_file  = "/vault/userconfig/vault-ha-tls/vault.key"
+               tls_client_ca_file = "/vault/userconfig/vault-ha-tls/vault.ca"
+            }
+            storage "consul" {
+               path = "vault"
+               address = "HOST_IP:8500"
+            }
+            disable_mlock = true
+            service_registration "kubernetes" {}
+   ui:
+     enabled: true
+     serviceType: "ClusterIP"
+EOF
+
+# Передеплой кластера
+$ helm uninstall vault -n vault
+
+$ helm install -n $VAULT_K8S_NAMESPACE $VAULT_HELM_RELEASE_NAME kubernetes-vault/vault-helm -f ${WORKDIR}/overrides.yaml
+NAME: vault
+LAST DEPLOYED: Sun Jul 30 15:40:04 2023
+NAMESPACE: vault
+STATUS: deployed
+REVISION: 1
+NOTES:
+Thank you for installing HashiCorp Vault!
+
+Now that you have deployed Vault, you should look over the docs on using
+Vault with Kubernetes available here:
+
+https://www.vaultproject.io/docs/
+
+
+Your release is named vault. To learn more about the release, try:
+
+  $ helm status vault
+  $ helm get manifest vault
+
+```
+Инициализируем / распечатаем волт прежним [порядком](#инициализируем-vault)  
+
+#### Логин в кластер
+
+```bash
+$ kubectl exec -n $VAULT_K8S_NAMESPACE vault-0 -- vault login <root token>
+Success! You are now authenticated. The token information displayed below
+is already stored in the token helper. You do NOT need to run "vault login"
+again. Future Vault requests will automatically use this token.
+
+Key                  Value
+---                  -----
+token                <root token>
+token_accessor       <accessor token>
+token_duration       ∞
+token_renewable      false
+token_policies       ["root"]
+identity_policies    []
+policies             ["root"]
+
+# Смотрим на vault кластер
+$ kubectl exec -n $VAULT_K8S_NAMESPACE vault-0 -- vault operator members
+Host Name    API Address                    Cluster Address                        Active Node    Version    Upgrade Version    Redundancy Zone    Last Echo
+---------    -----------                    ---------------                        -----------    -------    ---------------    ---------------    ---------
+vault-0      https://172.17.133.180:8200    https://vault-0.vault-internal:8201    true           1.14.0     n/a                n/a                n/a
+vault-1      https://172.17.134.116:8200    https://vault-1.vault-internal:8201    false          1.14.0     n/a                n/a                2023-07-30T13:10:33Z
+vault-2      https://172.17.135.166:8200    https://vault-2.vault-internal:8201    false          1.14.0     n/a                n/a                2023-07-30T13:10:35Z
+```
+
+#### Создаем секрет
+
+```bash
+# начнем сессию внутри пода
+$ kubectl exec -n $VAULT_K8S_NAMESPACE -it vault-0 -- /bin/sh
+
+# Активируем kv2
+/ $ vault secrets enable -path=secret kv-v2
+Success! Enabled the kv-v2 secrets engine at: secret/
+
+# Создаем секрет
+/ $ vault kv put secret/tls/apitest username="apiuser" password="supersecret"
+===== Secret Path =====
+secret/data/tls/apitest
+
+======= Metadata =======
+Key                Value
+---                -----
+created_time       2023-07-30T13:16:36.965875103Z
+custom_metadata    <nil>
+deletion_time      n/a
+destroyed          false
+version            1
+
+# Проверяем секрет
+/ $ vault kv get secret/tls/apitest
+===== Secret Path =====
+secret/data/tls/apitest
+
+======= Metadata =======
+Key                Value
+---                -----
+created_time       2023-07-30T13:16:36.965875103Z
+custom_metadata    <nil>
+deletion_time      n/a
+destroyed          false
+version            1
+
+====== Data ======
+Key         Value
+---         -----
+password    supersecret
+username    apiuser
+
+/$ exit
+```
+
+#### Service
+```bash
+# Helm chart создал сервис vault, который распределяет запросы по эндпоинтам под vault-0, vault-1, vault-2  
+$ kubectl -n $VAULT_K8S_NAMESPACE get service vault
+NAME    TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)             AGE
+vault   ClusterIP   172.18.203.152   <none>        8200/TCP,8201/TCP   27m
+
+# Будем обращаться к нему по http (не получится) и по https (как и хотели)
+$ k -n vault run nginx --image nginx
+pod/nginx created
+
+$ k -n vault get svc vault
+NAME    TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)             AGE
+vault   ClusterIP   172.18.203.152   <none>        8200/TCP,8201/TCP   54m
+
+$ k -n vault exec -it nginx -- curl -k 172.18.203.152:8200
+Client sent an HTTP request to an HTTPS server.
+
+$ k -n vault exec -it nginx -- curl -k https://172.18.203.152:8200
+<a href="/ui/">Temporary Redirect</a>. 
+```
+Также, если в ингрессу ходить не по https а по http, то теперь не будет работать, поэтому прописываем аннотацию **nginx.ingress.kubernetes.io/backend-protocol: 'HTTPS'**
+![img 2.png placeholder](/documentation/img/hw-11/2.png)
+
+Для этого применим правила ингресс с учетом TLS из [файла](/kubernetes-vault/ingress-vault-tls.yaml)  
+И проверим браузер 
+![img 1.png placeholder](/documentation/img/hw-11/1.png)
 
 ---
 <br>
