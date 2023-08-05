@@ -1,0 +1,67 @@
+global:
+  enabled: true
+  tlsDisable: false
+injector:
+  enabled: true
+server:
+  image:
+    repository: "cr.yandex/yc/vault"
+    tag: "latest"
+    # Overrides the default Image Pull Policy
+    pullPolicy: IfNotPresent
+  extraEnvironmentVars:
+    VAULT_CACERT: /vault/userconfig/vault-ha-tls/vault.ca
+    VAULT_TLSCERT: /vault/userconfig/vault-ha-tls/vault.crt
+    VAULT_TLSKEY: /vault/userconfig/vault-ha-tls/vault.key
+  volumes:
+    - name: userconfig-vault-ha-tls
+      secret:
+        defaultMode: 420
+        secretName: vault-ha-tls
+    - name: iam-key
+      secret:
+        defaultMode: 420
+        secretName: iam-key
+  volumeMounts:
+    - mountPath: /vault/userconfig/vault-ha-tls
+      name: userconfig-vault-ha-tls
+      readOnly: true
+    - mountPath: /vault/iam-key.json
+      name: iam-key
+      readOnly: true
+  standalone:
+    enabled: false
+  affinity: ""
+  ha:
+    enabled: true
+    replicas: 3
+    raft:
+      enabled: true
+      setNodeId: true
+      config: |
+        ui = true
+        listener "tcp" {
+          tls_disable = 0
+          address = "[::]:8200"
+          cluster_address = "[::]:8201"
+          tls_cert_file = "/vault/userconfig/vault-ha-tls/vault.crt"
+          tls_key_file  = "/vault/userconfig/vault-ha-tls/vault.key"
+          tls_client_ca_file = "/vault/userconfig/vault-ha-tls/vault.ca"
+        }
+        storage "consul" {
+          path = "vault"
+          address = "HOST_IP:8500"
+        }
+        disable_mlock = true
+        service_registration "kubernetes" {}
+        
+        # Example configuration for using auto-unseal, using Google Cloud KMS. The
+        # GKMS keys must already exist, and the cluster must have a service account
+        # that is authorized to access GCP KMS.
+        seal "yandexcloudkms" {
+          kms_key_id               = "abjifiucf0i54aduomn4"
+          service_account_key_file = "/vault/iam-key.json"
+        }
+  ui:
+    enabled: true
+    serviceType: "ClusterIP"

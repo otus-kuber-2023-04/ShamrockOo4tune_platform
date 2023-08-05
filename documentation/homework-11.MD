@@ -1285,6 +1285,83 @@ $ k -n vault exec -it nginx -- curl -k https://172.18.203.152:8200
 провайдер для autoanseal на ваш выбор  
 описать все в README.md  
 
+Не получилось. Можно дальше не читать
+
+```bash
+$ yc kms symmetric-key create --name vault-unseal --default-algorithm aes-256 --rotation-period 30d
+ERROR: invalid argument "30d" for "--rotation-period" flag: time: unknown unit "d" in duration "30d"
+anduser@shamil:~/ShamrockOo4tune_platform$ yc kms symmetric-key create --name vault-unseal --default-algorithm aes-256 --rotation-period 3600h
+id: abjifiucf0i54aduomn4
+folder_id: b1gjap7i9e06sdcbetb4
+created_at: "2023-07-31T12:07:47Z"
+name: vault-unseal
+status: ACTIVE
+primary_version:
+  id: abj2ilju0h986rto996n
+  key_id: abjifiucf0i54aduomn4
+  status: ACTIVE
+  algorithm: AES_256
+  created_at: "2023-07-31T12:07:47Z"
+  primary: true
+default_algorithm: AES_256
+rotation_period: 12960000s
+
+$ yc iam service-account list
++----------------------+------------------------------+
+|          ID          |             NAME             |
++----------------------+------------------------------+
+| aje2l72ok58ho3i2g2p0 | k8s-service-account-9hs4d199 |
+| ajeebe759peel64i1u9e | terraform                    |
+| ajel8aikh9801kmnrron | k8s-node-account-9hs4d199    |
++----------------------+------------------------------+
+
+anduser@shamil:~/ShamrockOo4tune_platform$ yc resource-manager folder list
++----------------------+---------+--------+--------+
+|          ID          |  NAME   | LABELS | STATUS |
++----------------------+---------+--------+--------+
+| b1gtm5r534h9cm58e7lb | default |        | ACTIVE |
+| b1gjap7i9e06sdcbetb4 | iac     |        | ACTIVE |
++----------------------+---------+--------+--------+
+
+anduser@shamil:~/ShamrockOo4tune_platform$ yc resource-manager folder add-access-binding b1gjap7i9e06sdcbetb4 --role kms.keys.encrypterDecrypter --subject serviceAccount:aje2l72ok58ho3i2g2p0
+done (4s)
+effective_deltas:
+  - action: ADD
+    access_binding:
+      role_id: kms.keys.encrypterDecrypter
+      subject:
+        id: aje2l72ok58ho3i2g2p0
+        type: serviceAccount
+
+# создадим json key для для сервисного аккаунта
+$ yc iam key create --service-account-id aje2l72ok58ho3i2g2p0 --description 'IAM key for sa k8s-service-account-9hs4d199' -o ./kubernetes-vault/k8s-service-account-9hs4d199-iam-key.json
+id: aje3jcbhs4jv1l7geabe
+service_account_id: aje2l72ok58ho3i2g2p0
+created_at: "2023-07-31T12:33:51.275186522Z"
+description: IAM key for sa k8s-service-account-9hs4d199
+key_algorithm: RSA_2048
+
+
+
+# сохраним ранее созданный секрет
+$ k -n vault get secret vault-ha-tls -o yaml > kubernetes-vault/vault-ha-tls.yaml
+
+# деинсталируем helm release и удалим неймспэйс
+$ helm -n vault uninstall vault
+$ k delete ns vault
+
+# воссоздадим ns vault
+$ k create ns vault
+# Восстановим секрет
+$ k apply -f kubernetes-vault/vault-ha-tls.yaml -n vault
+# Создадим секрет iam-key.json
+$ k create secret generic iam-key -n vault --from-file ./kubernetes-vault/k8s-service-account-9hs4d199-iam-key.json 
+
+# Передеплоим vault кластер c overrides.yaml
+$ helm install -n vault vault kubernetes-vault/vault-helm -f kubernetes-vault/overrides.yaml
+
+```
+
 ---
 <br>
 
