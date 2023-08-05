@@ -24,3 +24,5 @@ ShamrockOo4tune Platform repository
 [Домашнее задание №10](/documentation/homework-10.MD) GitOps и инструменты поставки    
 
 [Домашнее задание №11](/documentation/homework-11.MD) Хранилище секретов для приложений. Vault  
+
+[Домашнее задание №12](/documentation/homework-12.MD) Отладка и тестирование в Kubernetes  
