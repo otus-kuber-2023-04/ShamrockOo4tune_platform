@@ -1,0 +1,16 @@
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: sgumerov-certs
+  namespace: istio-system
+spec:
+  secretName: sgumerov-certs
+  issuerRef:
+    name: selectel-letsencrypt-prod    
+    kind: ClusterIssuer
+  commonName: sgumerov.site 
+  dnsNames: 
+  - 'sgumerov.site'
+  - '*.sgumerov.site'
+...

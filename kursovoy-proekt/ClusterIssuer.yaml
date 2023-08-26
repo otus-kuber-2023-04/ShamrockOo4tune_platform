@@ -1,0 +1,29 @@
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata: 
+  name: selectel-letsencrypt-prod
+  namespace: cert-manager
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: shamrockoo4tune@yandex.ru
+    privateKeySecretRef:
+      name: selectel-letsencrypt-prod
+    solvers:
+    - dns01:
+        webhook:
+          groupName: acme.selectel.ru
+          solverName: selectel
+          config:
+            apiKeySecretRef:
+              name: selectel-api-key
+              key: token
+
+            # Optional config, shown with default values
+            #   all times in seconds
+            ttl: 120
+            timeout: 30
+            propagationTimeout: 120
+            pollingInterval: 2
+...
